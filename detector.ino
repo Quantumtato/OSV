@@ -3,7 +3,10 @@
   Servo servo2;
   #define irpin1 2
   #define irpin2 3
-  int j =90;
+  boolean forward1 =true;
+  boolean forward2 = true;
+  int j =91;
+  int i =0;
   float angle1;
   float angle2;
   float y = 0;
@@ -24,22 +27,32 @@ void setup() {
 
 void loop() {
   
- for(int i =0; i < 180;){
   if(!digitalRead(irpin2)){
     angle1= (float)i;
-    }else{servo1.write(i);
-    i++;
+     Serial.print("angle1=");
+    Serial.println(angle1);
+    }else{
+    servo1.write(i);
+    if(forward1==true){
+      i++;
+      }else{
+      i--;
+        }
     }
+  if(i==0||i==90){
+    forward1 =  !forward1;
+    }else{}
     
     sweep();
-    detect();
-  delay(100);
-  }
+    calculate();
+  delay(30);
 
 }
-void detect(){
+void calculate(){
   if(!digitalRead(irpin1) && !digitalRead(irpin2)) {
-    y = (c / sin(angle1 + angle2))*sin(angle1)*sin(angle2);
+    angle1= angle1*PI/180.0;
+    angle2= angle2*PI/180.0;
+    y = (c/(sin(angle1 + angle2)))*sin(angle1)*sin(angle2);
     x0 = (c / sin(angle1 + angle2))*sin(angle1)*cos(angle2);
     if(x0<(c/2)) {
       x = (-1*c/2 + x0);
@@ -67,10 +80,17 @@ void detect(){
 void sweep(){
   if(!digitalRead(irpin1)){
     angle2= 180 - (float)j;
-    }else{servo2.write(j);
-    j++;
+    Serial.print("angle2=");
+    Serial.println(angle2);
+    }else{
+    servo2.write(j);
+    if(forward2==true){
+      j++;
+      }else{
+      j--;
+        }
     }
-  if(j == 180){
-    j=0;
-    }
+  if(j==180||j==90){
+    forward2 =  !forward2;
+    }else{}
   }
