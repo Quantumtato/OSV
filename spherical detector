@@ -23,6 +23,7 @@ int candles[300][2];
 int i =0;
 int numcandles=0;
 
+
 int theta = 0;    // variable to store the servo position
 int phi = 0;
 float deltaphi=10;
@@ -112,8 +113,12 @@ void detector(){
    ET.begin(details(outdata), &Wire);
   servo1.attach(9);  // attaches the servo on pin 9 to the servo object
   servo2.attach(10);
+  pinMode(3, INPUT);
   pinMode(input, INPUT_PULLUP);
   Serial.begin(9600);
+  while(digitalRead(3)){
+    Serial.prinln("waiting");
+    }
   go();
 Serial.println("donego");
 detector();
