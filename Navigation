@@ -1,0 +1,905 @@
+#include <Enes100.h>
+
+////////james' transfer code IGNORE////////////////////
+#include <EasyTransferI2C.h>
+EasyTransferI2C ET; 
+
+struct RECEIVE_DATA_STRUCTURE{
+  //put your variable definitions here for the data you want to receive
+  //THIS MUST BE EXACTLY THE SAME ON THE OTHER ARDUINO
+  int16_t numcandles;
+  boolean done;
+};
+
+//give a name to the group of data
+RECEIVE_DATA_STRUCTURE outdata;
+int numcandles;
+boolean done = false;
+///////////////////////////////////////////////////////////////////
+//variables
+Enes100 enes("Fire Drill", FIRE, 8, 13, 3);
+#define trigger1 7
+#define echo1 8
+#define trigger3 7
+#define echo3 12
+float reading1;
+float distance1;
+float reading3;
+float distance3;
+int M1 = 5; //right, forward 
+int M2 = 6; //right, backward
+int M3 = 9; //left, forward
+int M4 = 10; //left, backward
+
+void Forward(){
+  analogWrite(M1, 255);
+  analogWrite(M2, 0);
+  analogWrite(M3, 255);
+  analogWrite(M4, 0);
+  delay(200);
+}
+
+void TurnRight(){
+  analogWrite(M1, 0);
+  analogWrite(M2, 255);
+  analogWrite(M3, 255);
+  analogWrite(M4, 0);
+  delay(100);
+}
+
+void TurnLeft(){
+  analogWrite(M1, 255);
+  analogWrite(M2, 0);
+  analogWrite(M3, 0);
+  analogWrite(M4, 255);
+  delay(100);
+}
+
+void Stop(){
+  analogWrite(M1, 0);
+  analogWrite(M2, 0);
+  analogWrite(M3, 0);
+  analogWrite(M4, 0);
+  delay(100);
+}
+
+void PrintLocation(){
+while (!enes.retrieveDestination()) {
+  enes.println("Unable to retrieve Destination");
+  }
+while (!enes.updateLocation()) {
+  enes.println("Unable to update Location");
+  }
+enes.print("My x coordinate is ");
+enes.println(enes.location.x);
+enes.print("My y coordinate is ");
+enes.println(enes.location.y);
+enes.print("My theta is ");
+enes.println(enes.location.theta);
+enes.print("My destination is at ");
+enes.print(enes.destination.x);
+enes.print(",");
+enes.println(enes.destination.y);
+}
+void Distance(){ //Reads and prints values of all three distance sensors every .01 seconds
+  digitalWrite(trigger1, LOW);
+  delay(2);
+  digitalWrite(trigger1, HIGH);
+  delay(10);
+  digitalWrite(trigger1, LOW);
+  reading1 = pulseIn(echo1, HIGH);
+  distance1 = reading1*0.34/2;
+  digitalWrite(trigger3, LOW);
+  delay(2);
+  digitalWrite(trigger3, HIGH);
+  delay(10);
+  digitalWrite(trigger3, LOW);
+  reading3 = pulseIn(echo3, HIGH);
+  distance3 = reading3*0.34/2;
+  delay(2);
+  enes.print(distance1);
+  enes.print(",;;; ");
+  enes.println(distance3);
+}
+
+void setup() {
+Wire.begin(2);
+ET.begin(details(outdata), &Wire);
+Wire.onReceive(receive);
+
+//Ultrasonic Sensor
+Serial.begin (9600);
+pinMode(trigger1, OUTPUT);
+pinMode(echo1, INPUT);
+pinMode(trigger3, OUTPUT);
+pinMode(echo3, INPUT);
+
+//Motors
+pinMode(M1, OUTPUT);
+pinMode(M2, OUTPUT);
+pinMode(M3, OUTPUT);
+pinMode(M4, OUTPUT);
+
+//MissionCode
+pinMode(2, OUTPUT);
+digitalWrite(2, LOW);
+
+//Retrieve the destination
+PrintLocation();
+}
+
+void loop() {
+enes.println("Start");
+Serial.println(9600);
+while(1==1){
+  while(enes.updateLocation()){
+    CrossOverRocky();
+    delay(10);
+    }
+  while(!enes.updateLocation()){
+    enes.println("Unable to update location");
+    Stop();
+    delay(1000);
+    }
+  }
+  enes.println("wrong");
+}
+
+void CrossOverRocky() {  //OSV stops for 1 second after crossing rocky terrain 
+while(enes.location.x<1){
+  enes.updateLocation();
+  delay(10); //updates location every .01 seconds 
+  if((3.2>=enes.location.theta)&&(enes.location.theta>-.01)){ //If the OSV is pointed upwards 
+    if((0.07>enes.location.theta)&&(enes.location.theta>-0.07)){ //If the OSV is pointed towards 0 degrees 
+      while(1==1){
+        enes.println("OSV Crossing"); //Move forwards .01 seconds 
+        analogWrite(M1, 200);
+        analogWrite(M2, 0);
+        analogWrite(M3, 200);
+        analogWrite(M4, 0);
+        enes.updateLocation();
+        delay(10);
+        while(enes.location.x>1){
+          enes.updateLocation();
+          delay(1);
+          enes.println("CROSSED");
+          Stop();
+          PrintLocation();
+          delay(1000);
+          ReOrientate();
+          }
+        }
+      }
+    else{
+      enes.println("R-Couch"); //Turn to the right 
+      TurnRight();
+      Stop();
+      }
+    }
+  if((.01>enes.location.theta)&&(enes.location.theta>=-3.2)){ //OSV pointed downwards 
+    if((0.07>enes.location.theta)&&(enes.location.theta>-0.07)){ //OSV pointed towards 0 degrees 
+      while(1==1){
+        enes.println("OSV Crossing"); //Move forwards .01 seconds 
+        Forward();
+        enes.updateLocation();
+        delay(10);
+        while(enes.location.x>1.01){
+          enes.updateLocation();
+          delay(1);
+          enes.println("CROSSED");
+          Stop();
+          PrintLocation();
+          delay(1000);
+          ReOrientate(); 
+          }
+        }
+      }
+    else{
+      enes.println("L-Pie"); //Turn left
+      TurnLeft();
+      Stop();
+      }
+    }
+  }
+}
+
+void ReOrientate(){
+enes.updateLocation();
+delay(10);
+if((.01>enes.location.theta)&&(enes.location.theta>=-3.2)){
+  enes.updateLocation();
+  if((0.08>enes.location.theta)&&(enes.location.theta>-0.08)){ //OSV pointed towards 0 degrees 
+    Stop();
+    StopAtBasicObstacle();//calls next loop for obstacle avoidance
+    }
+  else{
+    enes.println("Re-Orientating"); //Turn left
+    TurnLeft();
+    Stop();
+    }
+  }
+if((3.2>=enes.location.theta)&&(enes.location.theta>-.01)){ //If the OSV is pointed upwards 
+  enes.updateLocation();
+  if((0.08>enes.location.theta)&&(enes.location.theta>-0.08)){ //If the OSV is pointed towards 0 degrees 
+    Stop();
+    StopAtBasicObstacle();//calls next loop for obstacle avoidance
+    }
+  else{
+    enes.println("Re-Orientating"); //Turn to the right 
+    TurnRight();
+    Stop();
+    }
+  }
+}
+
+void StopAtBasicObstacle() { //loop for stopping at obstacle 
+while(enes.location.x<2.4) { //2.4 is our "way point" for navigating to mission site 
+  enes.updateLocation();
+  delay(10);
+  Distance();
+  while((distance1<150)||(distance3<150)){ //When sensors read <15cm away, stop motors and call upon next loop 
+    Distance();
+    if((distance1<150)||(distance3<150)){
+      if((distance1>2)||(distance3>2)){
+        enes.println("OBSTACLE!!!");
+        Stop();
+        delay(400);
+        TurnParallelToBasicObstacle();
+        }else{}
+      }else{}
+    }
+  Forward();
+  Stop();
+  }
+Stop(); //When x value > 2.4, the OSV is at its "waypoint" and says "clear" and calls upon loop for getting to mission site
+enes.println("Waypoint");
+PrintLocation();
+delay(1000);
+FaceTowardMissionAfterBasicObstacle();
+}
+
+void TurnParallelToBasicObstacle() {
+while(enes.location.y<1){ 
+  enes.updateLocation();
+  delay(10);
+  while((enes.location.y<=1.07)&&(enes.location.y>=.93)){
+    enes.updateLocation();
+    delay(10);
+    MiddleAvoidance();
+    }
+  enes.updateLocation();
+  delay(10);
+  if((1.7>enes.location.theta)&&(enes.location.theta>1.5)){ //If OSV is pointed towards pi/2
+    Stop(); //Move forward the distance of the largest obstacle 
+    NavigateBasicObstacle();
+    }
+  else{
+    enes.println("L-Potato"); //Turn left if not pointed at pi/2
+    TurnLeft();
+    Stop();
+    }
+  }
+while(enes.location.y>1){
+  enes.updateLocation();
+  delay(10);
+  while((enes.location.y<=1.07)&&(enes.location.y>=.93)){
+    enes.updateLocation();
+    delay(10);
+    MiddleAvoidance();
+    }
+  enes.updateLocation();
+  delay(10);
+  if((-1.7<enes.location.theta)&&(enes.location.theta<-1.5)){ //If OSV is pointed towards -pi/2
+    Stop();
+    NavigateBasicObstacle(); //Call upon loop to navigate around the obstacle
+    }
+  else{
+    enes.println("R-Strawberry"); //Turn right if OSV is not pointed towards -pi/2
+    TurnRight();
+    Stop();
+    }
+  }
+}
+
+void NavigateBasicObstacle(){ //For navigating around obstacles 
+enes.updateLocation();
+delay(10);
+while((1.7>enes.location.theta)&&(enes.location.theta>1.4)){ //While OSV is pointed towards pi/2
+  Distance();
+  enes.updateLocation();
+  delay(10);
+  while((distance1<150)||(distance3<150)){ //When sensors read <15cm away, stop motors and call upon next loop 
+    Distance();
+    if((distance1<150)||(distance3<150)){
+      if((distance1>2)||(distance3>2)){
+        enes.println("OBSTACLE!!!");
+        Stop();
+        delay(400);
+        HeadToWayPoint();
+        }else{}
+      }else{}
+    }
+  Forward();
+  Stop();     
+  if((1.1>enes.location.y)&&(enes.location.y>.9)){
+    Stop();
+    FaceTowardMissionAfterMiddleAvoidance();
+    }
+  else{
+    enes.println("Head to Y-value 1");
+    Forward();
+    Stop();
+    }
+  }
+while((-1.7<enes.location.theta)&&(enes.location.theta<-1.4)){ //While OSV is pointed towards -pi/2
+  Distance();
+  enes.updateLocation();
+  delay(10);
+  while((distance1<150)||(distance3<150)){ //When sensors read <15cm away, stop motors and call upon next loop 
+    Distance();
+    if((distance1<150)||(distance3<150)){
+      if((distance1>2)||(distance3>2)){
+        enes.println("OBSTACLE!!!");
+        Stop();
+        delay(400);
+        HeadToWayPoint();
+        }else{}
+      }else{}
+    }
+  Forward();
+  Stop();  
+  if((1.1>enes.location.y)&&(enes.location.y>.9)){
+    Stop();
+    FaceTowardMissionAfterMiddleAvoidance();
+    }
+  else{
+    enes.println("Head to Y-value 1");
+    Forward();
+    Stop();
+    }
+  }
+}
+
+void MiddleAvoidance() {
+while(enes.destination.y>enes.location.y){//Mission site is above current position of OSV
+  enes.updateLocation();
+  delay(10);
+  if((1.75>enes.location.theta)&&(enes.location.theta>1.45)){ //If OSV is pointed towards pi/2
+    Stop();
+    NavigateMiddleAvoidance();
+    }
+  else{
+    enes.println("L-Fries"); //Turn left if not pointed at pi/2
+    TurnLeft();
+    Stop();
+    }
+  }
+while(enes.destination.y<enes.location.y){//Mission site is below current position of OSV
+  enes.updateLocation();
+  delay(10);
+  if((-1.7<enes.location.theta)&&(enes.location.theta<-1.5)){ //If OSV is pointed towards -pi/2
+    Stop();
+    NavigateMiddleAvoidance();
+    }
+  else{
+    enes.println("R-Onion"); //Turn right if OSV is not pointed towards -pi/2
+    TurnRight();
+    Stop();
+    }
+  }
+}
+
+void NavigateMiddleAvoidance(){
+enes.updateLocation();
+delay(10);
+while((-1.7<enes.location.theta)&&(enes.location.theta<-1.5)){
+  enes.updateLocation();
+  delay(10);
+  if((enes.destination.y+0.07>enes.location.y)&&(enes.destination.y-0.03<enes.location.y)){
+    Distance();
+    Forward();
+    Stop();
+    enes.println("Face the mission site");
+    FaceTowardMissionAfterMiddleAvoidance();
+    }
+  else{
+    enes.println("Head to Y-coordinate of Mission");
+    Forward();
+    Stop();
+    }
+  }
+while((1.7>enes.location.theta)&&(enes.location.theta>1.5)){
+  enes.updateLocation();
+  delay(10);
+  if((enes.destination.y+0.05>enes.location.y)&&(enes.destination.y-0.05<enes.location.y)){
+    Distance();
+    Forward();
+    Stop();
+    enes.println("Face the mission site");
+    FaceTowardMissionAfterMiddleAvoidance();
+    }
+  else{
+    enes.println("Head to Y-coordinate of Mission");
+    Forward();
+    Stop();
+    }
+  }
+}
+
+void LastChanceAtAvoidance(){
+while(enes.destination.y>1){ //go to 1.6 if mission in lower half
+  enes.updateLocation();
+  delay(10);
+  if((1.7>enes.location.theta)&&(enes.location.theta>1.5)){ //If OSV is pointed towards -pi/2
+    Stop();
+    MoveToNextLocation();
+    }
+  else{
+    enes.println("L-Printer");
+    TurnLeft();
+    Stop();
+  }
+}
+while(enes.destination.y<1){ //go to .4 if mission in upper half 
+  enes.updateLocation();
+  delay(10);
+  if((-1.7<enes.location.theta)&&(enes.location.theta<-1.5)){ //If OSV is pointed towards -pi/2
+    Stop();
+    MoveToNextLocation();
+    }
+  else{
+    enes.println("R-Glue");
+    TurnRight();
+    Stop();
+    }
+  }
+}
+
+void MoveToNextLocation(){
+while(enes.destination.y>1){
+  enes.updateLocation();
+  delay(10);
+  if((1.53<enes.location.y)&&(1.67>enes.location.y)){
+    Stop();
+    FaceTowardMissionAfterMiddleAvoidance();
+    }
+  else{
+    enes.println("Moving to 1.6");
+    Forward();
+    Stop();
+    }
+  }
+while(enes.destination.y<1){
+  enes.updateLocation();
+  delay(10);
+  if((0.33<enes.location.y)&&(0.47>enes.location.y)){
+    Stop();
+    FaceTowardMissionAfterMiddleAvoidance();
+    }
+  else{
+    enes.println("Moving to 0.4");
+    Forward();
+    Stop();
+    }
+  }
+}
+
+void FaceTowardMissionAfterMiddleAvoidance(){ //For after OSV moves past an obstacle 
+while((3.14>enes.location.theta)&&(enes.location.theta>0)){ //If OSV is between 0 degrees and 2pi
+  enes.updateLocation();
+  delay(10); 
+  if((0.09>enes.location.theta)&&(enes.location.theta>-0.08)){ //If OSV is pointed towards 0 degrees 
+    enes.println("Move toward Mission"); 
+    Stop();
+    Distance();
+    while((distance1<150)||(distance3<150)){
+      Distance();
+      if((distance1<150)||(distance3<150)){
+        if((distance1>2)||(distance3>2)){
+          enes.println("OBSTACLE!!!");
+          Stop();
+          LastChanceAtAvoidance();
+          }else{}
+        }else{}
+      }
+    StopAtBasicObstacle(); // Calls loop to stop at obstacles in case OSV runs into another obstacle before "way point"  
+    }
+  else{
+    enes.println("R-Pink"); //If its theta is not at 0 degrees, turn right 
+    TurnRight();
+    Stop();
+    }
+  }
+while((-3.14<enes.location.theta)&&(enes.location.theta<0)){  //If OSV theta is between -pi and 0
+  enes.updateLocation();
+  delay(10); 
+  if((0.09>enes.location.theta)&&(enes.location.theta>-0.08)){ //If OSV is pointed at 0 degrees, stop
+    enes.println("Move toward Mission");
+    Stop();
+    Distance();
+    while((distance1<150)||(distance3<150)){
+      Distance();
+      if((distance1<150)||(distance3<150)){
+        if((distance1>2)||(distance3>2)){
+          enes.println("OBSTACLE!!!");
+          Stop();
+          LastChanceAtAvoidance();
+          }else{}
+        }else{}
+      }
+    StopAtBasicObstacle(); //Calls on loop to sense for obstacles before "way point" 
+    }
+  else{
+    enes.println("L-Never"); // If not pointed at 0 degrees, turn left 
+    TurnLeft();
+    Stop();
+    }
+  }
+}
+
+void FaceTowardMissionAfterBasicObstacle() { //Loop to orientate towards mission site after "waypoint" 
+enes.updateLocation();
+while(enes.destination.x+1>enes.location.x){
+  enes.updateLocation();
+  if(enes.destination.y>enes.location.y){
+    while((enes.location.y<enes.destination.y+0.05)&&(enes.location.y>(enes.destination.y)-0.05)){
+      enes.println("Y-values are equal");
+      Stop();
+      delay(400);
+      OrientateTowardTheMissionYValue(); 
+      }
+    enes.updateLocation();
+    delay(10);
+    if((1.8>enes.location.theta)&&(enes.location.theta>1.5)){
+      enes.println("Head to Y-coordinate of Mission");
+      Forward();
+      Stop();
+      MoveToYValueOfMission();
+      }
+    else{
+      enes.println("L-Panda");
+      TurnLeft();
+      Stop();
+      }
+    }
+  else{
+    enes.updateLocation();
+    delay(10);
+    while((enes.location.y<enes.destination.y+0.05)&&(enes.location.y>(enes.destination.y)-0.05)){
+      enes.println("Y-values are equal");
+      Stop();
+      delay(400);
+      OrientateTowardTheMissionYValue(); 
+      }
+    if((-1.8<enes.location.theta)&&(enes.location.theta<-1.5)){
+      enes.println("Head to Y-coordinate of Mission");
+      Forward();
+      Stop();
+      MoveToYValueOfMission();
+      }
+    else{
+      enes.println("R-Tigger");
+      TurnRight();
+      Stop();
+      }
+    }
+  }
+}
+
+void MoveToYValueOfMission(){
+enes.updateLocation();
+delay(10);
+while((-1.7<enes.location.theta)&&(enes.location.theta<-1.5)){
+  Distance();
+  enes.updateLocation();
+  delay(10);
+  if((enes.destination.y+0.05>enes.location.y)&&(enes.destination.y-0.05<enes.location.y)){
+    enes.println("Face the mission site");
+    Stop();
+    OrientateTowardTheMissionYValue();
+    }
+  else{
+    while((distance1<150)||(distance3<150)){
+      Distance();
+      if((distance1<150)||(distance3<150)){
+        if((distance1>2)||(distance3>2)){
+          enes.println("OBSTACLE!!!");
+          Stop();
+          delay(400);
+          OrientateTowardTheMissionXValue(); 
+          }else{}
+        }else{}
+      }
+    enes.println("Head to Y-coordinate of Mission");
+    Forward();
+    Stop();
+    }
+  }
+while((1.7>enes.location.theta)&&(enes.location.theta>1.5)){
+  Distance();
+  enes.updateLocation();
+  delay(10);
+  if((enes.destination.y+0.05>enes.location.y)&&(enes.destination.y-0.05<enes.location.y)){
+    while((distance1<150)||(distance3<150)){
+      Distance();
+      if((distance1<150)||(distance3<150)){
+        if((distance1>2)||(distance3>2)){
+          enes.println("OBSTACLE!!!");
+          Stop();
+          delay(400);
+          OrientateTowardTheMissionXValue(); 
+          }else{}
+        }else{}
+      }
+    enes.println("Face the mission site");
+    Stop();
+    OrientateTowardTheMissionYValue();
+    }
+  else{
+    enes.println("Head to Y-coordinate of Mission");
+    Forward();
+    Stop();
+    }
+  }
+}
+
+void OrientateTowardTheMissionYValue() {
+while((3.14>enes.location.theta)&&(enes.location.theta>-1)){
+  enes.updateLocation();
+  delay(10);
+  if((0.08>enes.location.theta)&&(enes.location.theta>-.08)){
+    enes.println("Almost There");
+    Stop();
+    UseSensorToReachMission();
+    }
+  else{
+    enes.println("R-Tile");
+    TurnRight();
+    Stop();
+    }
+  }
+while((-3.14<enes.location.theta)&&(enes.location.theta<1)){
+  enes.updateLocation();
+  delay(10);
+  if((0.08>enes.location.theta)&&(enes.location.theta>-.08)){
+    enes.println("Almost There");
+    Stop();
+    UseSensorToReachMission();
+    }
+  else{
+    enes.println("L-Chocolate");
+    TurnLeft();
+    Stop();
+    }
+  }
+}
+
+void OrientateTowardTheMissionXValue(){
+while((3.14>enes.location.theta)&&(-.1<enes.location.theta)){ //OSV pointing upwards 
+enes.updateLocation ();
+delay(10);
+  if((enes.location.theta<.08)&&(enes.location.theta>-.08)){
+    enes.println ("Move to X-coordinate of Mission");
+    Stop();
+    MoveToTheXValueOfMission();
+    }
+  else{
+    enes.println ("R-Pancake"); 
+    TurnRight();
+    Stop();
+    }
+  }
+while((-3.14<enes.location.theta)&&(.1>enes.location.theta)){ //OSV pointing downwards 
+  enes.updateLocation ();
+  delay(10);
+  if((enes.location.theta<.08)&&(enes.location.theta>-.08)){
+    enes.println ("Move to X-coordinate of Mission");
+    Stop();
+    MoveToTheXValueOfMission();
+    }
+  else{
+    enes.println("L-Box");
+    TurnLeft();
+    Stop();
+    }
+  }
+}
+
+void MoveToTheXValueOfMission(){
+while((enes.location.theta<1)&&(enes.location.theta>-1)){
+  Distance();
+  enes.updateLocation();
+  delay(10);
+  if((enes.location.x>enes.destination.x-.07)&&(enes.location.x<enes.destination.x+.07)){
+    Stop();
+    FaceTheMissionFromBelowOrAbove();
+    }
+  else{
+    while((distance1<150)||(distance3<150)){
+      Distance();
+      if((distance1<150)||(distance3<150)){
+        if((distance1>2)||(distance3>2)){
+          enes.println("OBSTACLE!!!");
+          Stop();
+          delay(400);
+          FaceTowardMissionAfterBasicObstacle(); 
+          }else{}
+        }
+      }
+    enes.println("Move to X-coordinate of Mission");
+    Forward();
+    Stop();
+    }
+  }
+}
+
+void FaceTheMissionFromBelowOrAbove() {
+while(enes.location.y<enes.destination.y){
+  enes.updateLocation();
+  delay(10);
+  if((1.63>enes.location.theta)&&(enes.location.theta>1.50)){
+    enes.println("Almost There");
+    Stop();
+    UseSensorToReachMission();
+    }
+  else{
+    enes.println("L-White");
+    TurnLeft();
+    Stop();
+    }
+  }
+while(enes.location.y>enes.destination.y){
+  enes.updateLocation();
+  delay(10);
+  if((-1.50>enes.location.theta)&&(enes.location.theta>-1.63)){
+    enes.println("Almost There");
+    Stop();
+    UseSensorToReachMission();
+    }
+  else{
+    enes.println("R-Snow");
+    TurnRight();
+    Stop();
+    }
+  }
+}
+
+void HeadToWayPoint() {
+while((3.14>enes.location.theta)&&(-.1<enes.location.theta)){ //OSV pointing upwards 
+  enes.updateLocation ();
+  delay(10);
+  if((enes.location.theta<.08)&&(enes.location.theta>-.08)){
+    enes.println ("Head to Waypoint");
+    Stop();
+    StopAtBasicObstacle();
+    }
+  else{
+    enes.println ("R-Quack"); 
+    TurnRight();
+    Stop();
+    }
+  }
+while ((-3.14<enes.location.theta)&&(.1>enes.location.theta)){ //OSV pointing downwards 
+  enes.updateLocation ();
+  delay(10);
+  if((enes.location.theta<.08)&&(enes.location.theta>-.08)){
+    enes.println ("Head to Waypoint");
+    Stop();
+    StopAtBasicObstacle();
+    }
+  else {
+    enes.println("L-MOOOOOOO");
+    TurnLeft();
+    Stop();
+    }
+  }
+}
+
+void UseSensorToReachMission() {
+enes.updateLocation();
+enes.println("james");
+Forward();
+Stop();
+Distance();
+while(enes.destination.x+1>enes.location.x){
+  enes.println("inloop");
+  Distance();
+  while((distance1<75)||(distance3<75)){
+    Distance();
+    if((distance1<80)||(distance3<80)){
+      if((distance1>2)||(distance3>2)){
+        enes.println("Move Forward A Little More");
+        delay(1000);
+        analogWrite(M1, 50);
+        analogWrite(M2, 0);
+        analogWrite(M3, 50);
+        analogWrite(M4, 0);
+        delay(150);
+        Stop();
+        enes.println("OBSTACLE!!!");
+        Stop();
+        MissionTime();
+        }else{}
+      }
+    }
+  analogWrite(M1, 100);
+  analogWrite(M2, 0);
+  analogWrite(M3, 100);
+  analogWrite(M4, 0);
+  delay(300);
+  Stop();
+  }
+enes.updateLocation();
+delay(10);
+Distance();
+Forward();
+Stop();
+LastOrientation();
+}
+
+void LastOrientation(){
+enes.updateLocation();
+delay(10);
+while((enes.location.theta>0.2)&&(enes.location.theta<3)){ //slightly pointed up compared to 0
+  enes.updateLocation();
+  delay(10);
+  if((0.02>enes.location.theta)&&(enes.location.theta>-0.02)){ //If the OSV is pointed towards 0 degree
+    Stop();
+    enes.println("Facing");
+    UseSensorToReachMission();
+    }
+  else{
+    enes.println("R-Bananas");
+    TurnRight();
+    Stop();
+    }
+  }
+Stop();
+enes.println("Facing");
+UseSensorToReachMission();
+while((enes.location.theta<-0.2)&&(enes.location.theta>-3)){ //slightly pointed down compared to 0
+  enes.updateLocation();
+  delay(10);
+  if((0.02>enes.location.theta)&&(enes.location.theta>-0.02)){ //If the OSV is pointed towards 0 degree
+    Stop();
+    enes.println("Facing");
+    UseSensorToReachMission();
+    }
+  else{
+    enes.println("L-Oranges");
+    TurnLeft();
+    Stop();
+    }
+  }
+Stop();
+enes.println("Facing");
+UseSensorToReachMission();
+}
+
+void MissionTime() {
+  enes.println("Oops Nvm ... Mission Time");
+  delay(1000);
+  enes.println("Send Signal");
+  digitalWrite(2, HIGH);
+  while(1==1){
+  if(ET.receiveData()){
+    numcandles = outdata.numcandles;
+    done = outdata.done;
+    enes.println("recived");
+    }
+  if(done==true){
+    enes.println("The number of flames are ");
+    enes.baseObjective(numcandles);
+    enes.println(numcandles);
+    enes.println("Have a nice day Ethan!");
+    enes.println("Epic Victory Royale!");
+    delay(200000); 
+    break;
+    }else{
+      enes.println("waiting for mission");
+      enes.println(done);
+    }
+  }
+}
+
+void receive(int numBytes) {}
