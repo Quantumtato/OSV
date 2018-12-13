@@ -1,39 +1,37 @@
 #include <Servo.h>
-/*#include <MemoryFree.h>
+#include <Wire.h>
 #include <EasyTransferI2C.h>
 //et shit
 EasyTransferI2C ET;
-struct RECEIVE_DATA_STRUCTURE{
-  //put your variable definitions here for the data you want to receive
-  //THIS MUST BE EXACTLY THE SAME ON THE OTHER ARDUINO
-boolean rundetector;
-
-};
-RECEIVE_DATA_STRUCTURE indata;
 struct SEND_DATA_STRUCTURE{
- int candlepos[5][2];
- int numcandles;
+ //put your variable definitions here for the data you want to receive
+  //THIS MUST BE EXACTLY THE SAME ON THE OTHER ARDUINO
+  int16_t numcandles;
+  boolean done;
 };
-SEND_DATA_STRUCTURE outdata;*/
-
+SEND_DATA_STRUCTURE outdata;
 Servo servo1;
 Servo servo2;
-int maxval =400;
+int maxval =300;
 int candles[300][2];
+
 int i =0;
 int numcandles=0;
-
+boolean done = false;
 
 int theta = 0;    // variable to store the servo position
 int phi = 0;
 float deltaphi=10;
 float deltatheta=5;
+float testtheta;
+float testphi;
 boolean sign = true;
 #define input 4
 unsigned long timelimit = 10;
 unsigned long timebetween;
 unsigned long lasttime;
 
+ 
 void flamestate(){
   if(!digitalRead(input)){
     if(millis()-lasttime>timelimit){
@@ -51,16 +49,16 @@ void flamestate(){
             }else{}
             }
 void go() {
- for (theta = 0; theta <= 90; theta += 1) {
+ for (theta = 0; theta <= 70/*90?*/; theta += 1) {
     // in steps of 1 degree
     servo1.write(theta);  
       if(sign){
-        for(phi = 45; phi <= 135; phi += 1){
+        for(phi = 0; phi <= 180; phi += 1){
           servo2.write(phi);
           flamestate();
           delay(5);
           }}else{
-            for(phi = 135; phi >= 45; phi -= 1){
+            for(phi = 180; phi >= 0; phi -= 1){
            servo2.write(phi);
            ///start angle writing data
             //flamestate();
@@ -72,33 +70,37 @@ void go() {
   }
 }
 void detector(){  
-    for(int j=0;j<maxval; j+= 1){
-       for(int m=0;m<maxval; m+= 1){
+    for(int j=0;j<=maxval; j+= 1){
+       for(int m=0;m<=maxval; m+= 1){
         if(candles[j][1] != NULL && candles[m][1] != NULL){
           if(m != j){
-            if(abs(candles[j][1]-candles[m][1])<deltatheta && abs(candles[j][2]-candles[m][2])<deltaphi){
+            testtheta = abs(candles[j][1]-candles[m][1]);
+            testphi = abs(candles[j][2]-candles[m][2]);
+            if(testtheta<deltatheta && testphi<deltaphi){
             candles[j][1] =NULL;
             candles[j][2] =NULL;
             Serial.println("gotem");
           }else{}
           }else{}
           }else{}
-          //Serial.print("freeMemory()=");
-    //Serial.println(freeMemory());
+
   }
       }
+      candles[300][2] =0;
+      candles[300][1] =0;
     for(int z=0; z <= maxval; z += 1){
       if(candles[z][1] != NULL){
         Serial.print("phi___");
         Serial.println(candles[z][1]);
         Serial.print("theta___");
         Serial.println(candles[z][2]);
-        
+        Serial.print("z___");
+        Serial.println(z);
         numcandles++;
         }else{}
       }
       if(numcandles>5){
-              Serial.print("number___");
+      Serial.print("number___");
       Serial.println("5");
         }else{
       Serial.print("number___");
@@ -108,31 +110,34 @@ void detector(){
 
 
   void setup() {
-/*   Wire.begin(2);
-   ET.begin(details(indata), &Wire);
-   ET.begin(details(outdata), &Wire);*/
+  Wire.begin(2);
+   ET.begin(details(outdata), &Wire);
   servo1.attach(9);  // attaches the servo on pin 9 to the servo object
   servo2.attach(10);
+  servo1.write(0);
+  servo2.write(45);
   pinMode(3, INPUT);
   pinMode(input, INPUT_PULLUP);
   Serial.begin(9600);
-  while(!digitalRead(3)){
+  while(digitalRead(3)==LOW){
     Serial.println("waiting");
     }
   go();
 Serial.println("donego");
 detector();
-//Serial.println("donedet");
+Serial.println("Epic Victory Royale!");
 }
 void loop(){
-
- for(int z=0; z <= maxval; z += 1){
-      if(candles[z][1] != NULL){
+outdata.done = true;
+outdata.numcandles = numcandles;
+//Serial.println("sent");
+ET.sendData(2);
+/*for(int z=0; z <= maxval; z += 1){
+   if(candles[z][1] != NULL){
         //outdata.candlepos[z][1]=candles[z][1]
         servo1.write(candles[z][1]);
         servo2.write(candles[z][2]);
-        //ET.sendData(1);
-        delay(5000);
+        delay(3000);
         }else{}
- }
+ }*/
 }
